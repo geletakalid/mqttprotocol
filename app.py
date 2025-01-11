@@ -1,29 +1,34 @@
 import paho.mqtt.client as mqtt
 import socket
 import time
-from flask import Flask, render_template
+from flask import Flask, jsonify
+from flask_cors import CORS
 
-# Flask setup
+# Flask Setup
 app = Flask(__name__)
+CORS(app)
 
-# MQTT Broker details
+# MQTT Broker Details
 BROKER = "broker.emqx.io"
 PORT = 1883
 TOPIC = "iot/gateway/ip"
 
-# Global variable to store the IP address
+# Global variable to store the latest IP address
 latest_ip = None
 
-# Function to get the IP address
+
+# Function to get the IP address assigned to the Raspberry Pi
 def get_ip_address():
     try:
         hostname = socket.gethostname()
-        return socket.gethostbyname(hostname)
+        ip_address = socket.gethostbyname(hostname)  # Get IP assigned by Wi-Fi
+        return ip_address
     except Exception as e:
         print(f"Error retrieving IP address: {e}")
         return None
 
-# MQTT on_connect callback
+
+# MQTT Callback for connection
 def on_connect(client, userdata, flags, rc):
     if rc == 0:
         print("Connected to MQTT Broker!")
@@ -31,15 +36,17 @@ def on_connect(client, userdata, flags, rc):
         latest_ip = get_ip_address()
         if latest_ip:
             print(f"Publishing IP address: {latest_ip}")
-            client.publish(TOPIC, latest_ip)
+            client.publish(TOPIC, latest_ip)  # Publish IP address to MQTT topic
     else:
         print(f"Failed to connect, return code {rc}")
 
-# MQTT on_message callback
+
+# MQTT Callback for received messages
 def on_message(client, userdata, msg):
     print(f"Message received: {msg.payload.decode()} on topic {msg.topic}")
 
-# MQTT setup and connection
+
+# Function to connect to the MQTT broker
 def connect_to_mqtt():
     client = mqtt.Client()
     client.on_connect = on_connect
@@ -58,11 +65,19 @@ def connect_to_mqtt():
 
     return client
 
-# Flask route to serve the frontend
-@app.route("/")
-def index():
-    return render_template("index.html", ip_address=latest_ip)
+
+# Flask route to serve the frontend with the latest IP address
+@app.route('/get_ip', methods=['GET'])
+def get_ip():
+    if latest_ip:
+        return jsonify({'ip_address': latest_ip})  # Return IP address as JSON
+    else:
+        return jsonify({'error': 'IP address not available'}), 500
+
 
 if __name__ == "__main__":
+    # Start the MQTT connection
     mqtt_client = connect_to_mqtt()
+
+    # Start the Flask app (Running on port 5000)
     app.run(host="0.0.0.0", port=5000)
